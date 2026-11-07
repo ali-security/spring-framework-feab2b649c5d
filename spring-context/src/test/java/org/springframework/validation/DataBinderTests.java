@@ -736,6 +736,103 @@ public class DataBinderTests {
 	}
 
 	@Test
+	public void testBindingWithUppercaseDisallowedFieldsInTurkishLocale() throws BindException {
+		Locale defaultLocale = Locale.getDefault();
+		try {
+			Locale.setDefault(new Locale("tr", "TR"));
+			Book book = new Book();
+			DataBinder binder = new DataBinder(book);
+			binder.setDisallowedFields("TITLE", "ISBN");
+			assertThat(binder.getDisallowedFields()).containsExactly("title", "isbn");
+
+			MutablePropertyValues pvs = new MutablePropertyValues();
+			pvs.add("title", "my book");
+			pvs.add("iSBN", "1234");
+			pvs.add("NInStock", "5");
+
+			binder.bind(pvs);
+			binder.close();
+
+			assertThat(book.getTitle()).as("did not change title").isNull();
+			assertThat(book.getISBN()).as("did not change ISBN").isNull();
+			assertThat(book.getNInStock()).as("changed nInStock correctly").isEqualTo(5);
+			assertThat(binder.getBindingResult().getSuppressedFields()).containsExactlyInAnyOrder("title", "iSBN");
+		}
+		finally {
+			Locale.setDefault(defaultLocale);
+		}
+	}
+
+	@Test
+	public void testBindingWithLowercaseDisallowedFieldsInTurkishLocale() throws BindException {
+		Locale defaultLocale = Locale.getDefault();
+		try {
+			Locale.setDefault(new Locale("tr", "TR"));
+			Book book = new Book();
+			DataBinder binder = new DataBinder(book);
+			binder.setDisallowedFields("isbn");
+
+			MutablePropertyValues pvs = new MutablePropertyValues();
+			pvs.add("title", "my book");
+			pvs.add("ISBN", "1234");
+
+			binder.bind(pvs);
+			binder.close();
+
+			assertThat(book.getTitle()).as("changed title correctly").isEqualTo("my book");
+			assertThat(book.getISBN()).as("did not change ISBN").isNull();
+			assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("ISBN");
+
+			OptionalHolder bean = new OptionalHolder();
+			binder = new DataBinder(bean);
+			binder.setConversionService(new DefaultConversionService());
+			binder.setDisallowedFields("id");
+
+			pvs = new MutablePropertyValues();
+			pvs.add("Id", "1");
+			pvs.add("name", "myName");
+
+			binder.bind(pvs);
+			binder.close();
+
+			assertThat(bean.getId()).as("did not change id").isNull();
+			assertThat(bean.getName().get()).as("changed name correctly").isEqualTo("myName");
+			assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("Id");
+		}
+		finally {
+			Locale.setDefault(defaultLocale);
+		}
+	}
+
+	@Test
+	public void testBindingWithDisallowedMapFieldsInTurkishLocale() throws BindException {
+		Locale defaultLocale = Locale.getDefault();
+		try {
+			Locale.setDefault(new Locale("tr", "TR"));
+			TestBean rod = new TestBean();
+			DataBinder binder = new DataBinder(rod);
+			binder.setDisallowedFields("someMap['KEYID']", "someMap[pin*]");
+
+			MutablePropertyValues pvs = new MutablePropertyValues();
+			pvs.add("someMap[key1]", "value1");
+			pvs.add("someMap[keyid]", "value2");
+			pvs.add("someMap['PINCODE']", "value3");
+
+			binder.bind(pvs);
+			binder.close();
+
+			@SuppressWarnings("unchecked")
+			Map<String, String> someMap = (Map<String, String>) rod.getSomeMap();
+			assertThat(someMap).containsOnly(entry("key1", "value1"));
+			assertThat(binder.getBindingResult().getSuppressedFields())
+					.containsExactlyInAnyOrder("someMap[keyid]", "someMap[PINCODE]");
+		}
+		finally {
+			Locale.setDefault(defaultLocale);
+		}
+	}
+
+	@Test
 	public void testBindingWithAllowedFieldsUsingAsterisks() throws BindException {
 		TestBean rod = new TestBean();
 		DataBinder binder = new DataBinder(rod, "person");
