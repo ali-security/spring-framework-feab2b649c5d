@@ -743,7 +743,7 @@ public class DataBinderTests {
 			Book book = new Book();
 			DataBinder binder = new DataBinder(book);
 			binder.setDisallowedFields("TITLE", "ISBN");
-			assertThat(binder.getDisallowedFields()).containsExactly("title", "isbn");
+			assertThat(binder.getDisallowedFields()).containsExactly("TITLE", "ISBN");
 
 			MutablePropertyValues pvs = new MutablePropertyValues();
 			pvs.add("title", "my book");
@@ -830,6 +830,136 @@ public class DataBinderTests {
 		finally {
 			Locale.setDefault(defaultLocale);
 		}
+	}
+
+	@Test  // CVE-2025-22233
+	public void testBindingWithMixedCaseDisallowedFieldsIsCaseInsensitive() throws BindException {
+		TestBean rod = new TestBean();
+		DataBinder binder = new DataBinder(rod);
+		binder.setDisallowedFields("aGe", "*OUChy", "SPOUSE.*");
+		MutablePropertyValues pvs = new MutablePropertyValues();
+		pvs.add("name", "Rod");
+		pvs.add("AGE", "32");
+		pvs.add("touchy", "Rod");
+		pvs.add("spouse.name", "Kerry");
+
+		binder.bind(pvs);
+		binder.close();
+
+		assertThat(rod.getName()).as("changed name correctly").isEqualTo("Rod");
+		assertThat(rod.getAge()).as("did not change age").isEqualTo(0);
+		assertThat(rod.getTouchy()).as("did not change touchy").isNull();
+		assertThat(rod.getSpouse()).as("did not create spouse").isNull();
+		assertThat(binder.getBindingResult().getSuppressedFields())
+				.containsExactlyInAnyOrder("AGE", "touchy", "spouse.name");
+	}
+
+	@Test  // CVE-2025-22233
+	public void testIsAllowedMatchesDisallowedPatternsIgnoringCase() {
+		DataBinder binder = new DataBinder(new TestBean());
+		binder.setDisallowedFields("age", "*Colour", "some*Map[*]", "SPOUSE.*");
+
+		// direct equality
+		assertThat(binder.isAllowed("age")).isFalse();
+		assertThat(binder.isAllowed("AGE")).isFalse();
+		assertThat(binder.isAllowed("Age")).isFalse();
+		// "*xxx"
+		assertThat(binder.isAllowed("favouriteColour")).isFalse();
+		assertThat(binder.isAllowed("FAVOURITECOLOUR")).isFalse();
+		// "xxx*yyy*"
+		assertThat(binder.isAllowed("someMap[key]")).isFalse();
+		assertThat(binder.isAllowed("SOMEMAP[KEY]")).isFalse();
+		// "xxx*"
+		assertThat(binder.isAllowed("spouse.name")).isFalse();
+		assertThat(binder.isAllowed("Spouse.Name")).isFalse();
+		// not matching
+		assertThat(binder.isAllowed("name")).isTrue();
+		assertThat(binder.isAllowed("ages")).isTrue();
+		assertThat(binder.isAllowed("touchy")).isTrue();
+	}
+
+	@Test  // CVE-2025-22233
+	public void testSetDisallowedFieldsStoresCanonicalPatternsWithoutLowercasing() {
+		DataBinder binder = new DataBinder(new TestBean());
+		binder.setDisallowedFields("Age", "SomeMap['KEY3']", "SPOUSE.*");
+
+		assertThat(binder.getDisallowedFields()).containsExactly("Age", "SomeMap[KEY3]", "SPOUSE.*");
+	}
+
+	@Test  // CVE-2025-22233
+	public void testDisallowedFieldMatchingIsLocaleIndependent() {
+		Locale original = Locale.getDefault();
+		try {
+			Locale.setDefault(new Locale("tr"));
+			DataBinder binder = new DataBinder(new TestBean());
+			binder.setDisallowedFields("jedi", "someIntArray", "SPOUSE.*");
+
+			assertThat(binder.isAllowed("JEDI")).isFalse();
+			assertThat(binder.isAllowed("Jedi")).isFalse();
+			assertThat(binder.isAllowed("SOMEINTARRAY")).isFalse();
+			assertThat(binder.isAllowed("spouse.name")).isFalse();
+		}
+		finally {
+			Locale.setDefault(original);
+		}
+	}
+
+	@Test  // CVE-2025-22233
+	public void testBindingWithDisallowedFieldsCannotBeBypassedWithDottedCapitalI() throws BindException {
+		// "İ" (LATIN CAPITAL LETTER I WITH DOT ABOVE) is lower-cased to "i̇" by
+		// String.toLowerCase(Locale.ROOT), but to "i" by Character.toLowerCase, which is
+		// what the BeanWrapper uses for its lenient property name lookup.
+		OptionalHolder bean = new OptionalHolder();
+		DataBinder binder = new DataBinder(bean);
+		binder.setDisallowedFields("id");
+
+		MutablePropertyValues pvs = new MutablePropertyValues();
+		pvs.add("İd", "1");
+
+		binder.bind(pvs);
+		binder.close();
+
+		assertThat(bean.getId()).as("did not change id").isNull();
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("İd");
+	}
+
+	@Test  // CVE-2025-22233
+	public void testBindingWithDisallowedFieldsCannotBeBypassedWithDotlessSmallI() throws BindException {
+		// "ı" (LATIN SMALL LETTER DOTLESS I) is left as is by String.toLowerCase(Locale.ROOT),
+		// but is upper-cased to "I" by Character.toUpperCase, which is what the BeanWrapper
+		// uses for its lenient property name lookup.
+		Book book = new Book();
+		DataBinder binder = new DataBinder(book);
+		binder.setDisallowedFields("ISBN");
+
+		MutablePropertyValues pvs = new MutablePropertyValues();
+		pvs.add("title", "my book");
+		pvs.add("ıSBN", "1234");
+
+		binder.bind(pvs);
+		binder.close();
+
+		assertThat(book.getTitle()).as("changed title correctly").isEqualTo("my book");
+		assertThat(book.getISBN()).as("did not change ISBN").isNull();
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("ıSBN");
+	}
+
+	@Test  // CVE-2025-22233
+	public void testIsAllowedMatchesDisallowedPatternsForUnicodeCaseVariants() {
+		DataBinder binder = new DataBinder(new TestBean());
+		binder.setDisallowedFields("id", "ISBN", "secret*", "*.id");
+
+		// direct equality
+		assertThat(binder.isAllowed("İd")).isFalse();
+		assertThat(binder.isAllowed("ıSBN")).isFalse();
+		// "xxx*" ("ſ" is LATIN SMALL LETTER LONG S)
+		assertThat(binder.isAllowed("ſecret")).isFalse();
+		assertThat(binder.isAllowed("ſecretKey")).isFalse();
+		// "*xxx"
+		assertThat(binder.isAllowed("nested.İd")).isFalse();
+		// not matching
+		assertThat(binder.isAllowed("name")).isTrue();
+		assertThat(binder.isAllowed("idx")).isTrue();
 	}
 
 	@Test
