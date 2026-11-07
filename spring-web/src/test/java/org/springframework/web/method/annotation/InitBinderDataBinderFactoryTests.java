@@ -116,7 +116,7 @@ public class InitBinderDataBinderFactoryTests {
 		WebDataBinder dataBinder = factory.createBinder(this.webRequest, null, "foo");
 
 		assertThat(dataBinder.getDisallowedFields()).isNotNull();
-		assertThat(dataBinder.getDisallowedFields()[0]).isEqualTo("requestParam-22");
+		assertThat(dataBinder.getDisallowedFields()[0]).isEqualToIgnoringCase("requestParam-22");
 	}
 
 	private WebDataBinderFactory createFactory(String methodName, Class<?>... parameterTypes)

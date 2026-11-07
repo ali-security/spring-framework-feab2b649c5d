@@ -64,12 +64,12 @@ import org.springframework.format.support.DefaultFormattingConversionService;
 import org.springframework.format.support.FormattingConversionService;
 import org.springframework.lang.Nullable;
 import org.springframework.tests.sample.beans.BeanWithObjectProperty;
-import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.assertj.core.api.Assertions.entry;
 
 /**
  * @author Rod Johnson
@@ -110,8 +110,7 @@ public class DataBinderTests {
 		assertThat(ex).isEqualTo(binder.getBindingResult());
 
 		other.reject("xxx");
-		boolean condition = !other.equals(binder.getBindingResult());
-		assertThat(condition).isTrue();
+		assertThat(other).isNotEqualTo(binder.getBindingResult());
 	}
 
 	@Test
@@ -171,7 +170,7 @@ public class DataBinderTests {
 	}
 
 	@Test
-	public void testBindingNoErrorsWithIgnoreInvalid() {
+	public void testBindingNoErrorsWithIgnoreInvalid() throws BindException {
 		TestBean rod = new TestBean();
 		DataBinder binder = new DataBinder(rod, "person");
 		binder.setIgnoreInvalidFields(true);
@@ -180,6 +179,10 @@ public class DataBinderTests {
 		pvs.add("spouse.age", 32);
 
 		binder.bind(pvs);
+		binder.close();
+
+		assertThat(rod.getName()).isEqualTo("Rod");
+		assertThat(rod.getSpouse()).isNull();
 	}
 
 	@Test
@@ -672,26 +675,28 @@ public class DataBinderTests {
 
 		binder.bind(pvs);
 		binder.close();
-		assertThat(rod.getName().equals("Rod")).as("changed name correctly").isTrue();
-		assertThat(rod.getAge() == 0).as("did not change age").isTrue();
+
+		assertThat(rod.getName()).as("changed name correctly").isEqualTo("Rod");
+		assertThat(rod.getAge()).as("did not change age").isZero();
 	}
 
 	@Test
 	public void testBindingWithDisallowedFields() throws BindException {
 		TestBean rod = new TestBean();
 		DataBinder binder = new DataBinder(rod);
-		binder.setDisallowedFields("age");
+		binder.setDisallowedFields(" ", "\t", "favouriteColour", null, "age");
 		MutablePropertyValues pvs = new MutablePropertyValues();
 		pvs.add("name", "Rod");
 		pvs.add("age", "32x");
+		pvs.add("favouriteColour", "BLUE");
 
 		binder.bind(pvs);
 		binder.close();
-		assertThat(rod.getName().equals("Rod")).as("changed name correctly").isTrue();
-		assertThat(rod.getAge() == 0).as("did not change age").isTrue();
-		String[] disallowedFields = binder.getBindingResult().getSuppressedFields();
-		assertThat(disallowedFields.length).isEqualTo(1);
-		assertThat(disallowedFields[0]).isEqualTo("age");
+
+		assertThat(rod.getName()).as("changed name correctly").isEqualTo("Rod");
+		assertThat(rod.getAge()).as("did not change age").isZero();
+		assertThat(rod.getFavouriteColour()).as("did not change favourite colour").isNull();
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactlyInAnyOrder("age", "favouriteColour");
 	}
 
 	@Test
@@ -706,11 +711,10 @@ public class DataBinderTests {
 
 		binder.bind(pvs);
 		binder.close();
-		assertThat(rod.getName().equals("Rod")).as("changed name correctly").isTrue();
-		assertThat(rod.getAge() == 0).as("did not change age").isTrue();
-		String[] disallowedFields = binder.getBindingResult().getSuppressedFields();
-		assertThat(disallowedFields.length).isEqualTo(1);
-		assertThat(disallowedFields[0]).isEqualTo("age");
+
+		assertThat(rod.getName()).as("changed name correctly").isEqualTo("Rod");
+		assertThat(rod.getAge()).as("did not change age").isZero();
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("age");
 	}
 
 	@Test
@@ -718,18 +722,17 @@ public class DataBinderTests {
 		TestBean rod = new TestBean();
 		DataBinder binder = new DataBinder(rod);
 		binder.setAllowedFields("name", "age");
-		binder.setDisallowedFields("age");
+		binder.setDisallowedFields("AGE");
 		MutablePropertyValues pvs = new MutablePropertyValues();
 		pvs.add("name", "Rod");
 		pvs.add("age", "32x");
 
 		binder.bind(pvs);
 		binder.close();
-		assertThat(rod.getName().equals("Rod")).as("changed name correctly").isTrue();
-		assertThat(rod.getAge() == 0).as("did not change age").isTrue();
-		String[] disallowedFields = binder.getBindingResult().getSuppressedFields();
-		assertThat(disallowedFields.length).isEqualTo(1);
-		assertThat(disallowedFields[0]).isEqualTo("age");
+
+		assertThat(rod.getName()).as("changed name correctly").isEqualTo("Rod");
+		assertThat(rod.getAge()).as("did not change age").isZero();
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("age");
 	}
 
 	@Test
@@ -764,7 +767,7 @@ public class DataBinderTests {
 		TestBean rod = new TestBean();
 		DataBinder binder = new DataBinder(rod);
 		binder.setAllowedFields("someMap[key1]", "someMap[key2]");
-		binder.setDisallowedFields("someMap['key3']", "someMap[key4]");
+		binder.setDisallowedFields("someMap['KEY3']", "SomeMap[key4]");
 
 		MutablePropertyValues pvs = new MutablePropertyValues();
 		pvs.add("someMap[key1]", "value1");
@@ -774,14 +777,11 @@ public class DataBinderTests {
 
 		binder.bind(pvs);
 		binder.close();
-		assertThat(rod.getSomeMap().get("key1")).isEqualTo("value1");
-		assertThat(rod.getSomeMap().get("key2")).isEqualTo("value2");
-		assertThat(rod.getSomeMap().get("key3")).isNull();
-		assertThat(rod.getSomeMap().get("key4")).isNull();
-		String[] disallowedFields = binder.getBindingResult().getSuppressedFields();
-		assertThat(disallowedFields.length).isEqualTo(2);
-		assertThat(ObjectUtils.containsElement(disallowedFields, "someMap[key3]")).isTrue();
-		assertThat(ObjectUtils.containsElement(disallowedFields, "someMap[key4]")).isTrue();
+
+		@SuppressWarnings("unchecked")
+		Map<String, String> someMap = (Map<String, String>) rod.getSomeMap();
+		assertThat(someMap).containsOnly(entry("key1", "value1"), entry("key2", "value2"));
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("someMap[key3]", "someMap[key4]");
 	}
 
 	/**
@@ -1175,11 +1175,9 @@ public class DataBinderTests {
 		assertThat(errors.getNestedPath()).isEqualTo("spouse.");
 
 		assertThat(errors.getErrorCount()).isEqualTo(1);
-		boolean condition1 = !errors.hasGlobalErrors();
-		assertThat(condition1).isTrue();
+		assertThat(errors.hasGlobalErrors()).isFalse();
 		assertThat(errors.getFieldErrorCount("age")).isEqualTo(1);
-		boolean condition = !errors.hasFieldErrors("name");
-		assertThat(condition).isTrue();
+		assertThat(errors.hasFieldErrors("name")).isFalse();
 	}
 
 	@Test
@@ -1357,6 +1355,7 @@ public class DataBinderTests {
 	}
 
 	@Test
+	@SuppressWarnings("unchecked")
 	public void testBindingStringArrayToIntegerSet() {
 		IndexedTestBean tb = new IndexedTestBean();
 		DataBinder binder = new DataBinder(tb, "tb");
@@ -1371,12 +1370,8 @@ public class DataBinderTests {
 		binder.bind(pvs);
 
 		assertThat(binder.getBindingResult().getFieldValue("set")).isEqualTo(tb.getSet());
-		boolean condition = tb.getSet() instanceof TreeSet;
-		assertThat(condition).isTrue();
-		assertThat(tb.getSet().size()).isEqualTo(3);
-		assertThat(tb.getSet().contains(10)).isTrue();
-		assertThat(tb.getSet().contains(20)).isTrue();
-		assertThat(tb.getSet().contains(30)).isTrue();
+		assertThat(tb.getSet()).isInstanceOf(TreeSet.class);
+		assertThat((Set<Integer>) tb.getSet()).containsExactly(10, 20, 30);
 
 		pvs = new MutablePropertyValues();
 		pvs.add("set", null);
@@ -1394,9 +1389,8 @@ public class DataBinderTests {
 		pvs.add("set", null);
 		binder.bind(pvs);
 
-		boolean condition = tb.getSet() instanceof TreeSet;
-		assertThat(condition).isTrue();
-		assertThat(tb.getSet().isEmpty()).isTrue();
+		assertThat(tb.getSet()).isInstanceOf(TreeSet.class);
+		assertThat(tb.getSet()).isEmpty();
 	}
 
 	@Test
@@ -1709,11 +1703,8 @@ public class DataBinderTests {
 		MutablePropertyValues pvs = new MutablePropertyValues();
 		pvs.add("stringArray", "a1-b2");
 		binder.bind(pvs);
-		boolean condition = !binder.getBindingResult().hasErrors();
-		assertThat(condition).isTrue();
-		assertThat(tb.getStringArray().length).isEqualTo(2);
-		assertThat(tb.getStringArray()[0]).isEqualTo("a1");
-		assertThat(tb.getStringArray()[1]).isEqualTo("b2");
+		assertThat(binder.getBindingResult().hasErrors()).isFalse();
+		assertThat(tb.getStringArray()).containsExactly("a1", "b2");
 	}
 
 	@Test
@@ -1729,8 +1720,7 @@ public class DataBinderTests {
 		MutablePropertyValues pvs = new MutablePropertyValues();
 		pvs.add("stringArray", new String[] {"a1", "b2"});
 		binder.bind(pvs);
-		boolean condition = !binder.getBindingResult().hasErrors();
-		assertThat(condition).isTrue();
+		assertThat(binder.getBindingResult().hasErrors()).isFalse();
 		assertThat(tb.getStringArray().length).isEqualTo(2);
 		assertThat(tb.getStringArray()[0]).isEqualTo("Xa1");
 		assertThat(tb.getStringArray()[1]).isEqualTo("Xb2");
@@ -1855,17 +1845,17 @@ public class DataBinderTests {
 		binder.setAllowedFields("name", "age");
 
 		String name = "Rob Harrop";
-		String beanName = "foobar";
+		int age = 42;
 
 		MutablePropertyValues mpvs = new MutablePropertyValues();
 		mpvs.add("name", name);
-		mpvs.add("beanName", beanName);
+		mpvs.add("age", age);
+		mpvs.add("beanName", "foobar");
 		binder.bind(mpvs);
 
 		assertThat(testBean.getName()).isEqualTo(name);
-		String[] disallowedFields = binder.getBindingResult().getSuppressedFields();
-		assertThat(disallowedFields.length).isEqualTo(1);
-		assertThat(disallowedFields[0]).isEqualTo("beanName");
+		assertThat(testBean.getAge()).isEqualTo(age);
+		assertThat(binder.getBindingResult().getSuppressedFields()).containsExactly("beanName");
 	}
 
 	@Test

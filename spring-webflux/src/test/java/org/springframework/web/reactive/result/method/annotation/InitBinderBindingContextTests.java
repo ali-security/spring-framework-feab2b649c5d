@@ -121,7 +121,7 @@ public class InitBinderBindingContextTests {
 		WebDataBinder dataBinder = context.createDataBinder(exchange, null, "foo");
 
 		assertThat(dataBinder.getDisallowedFields()).isNotNull();
-		assertThat(dataBinder.getDisallowedFields()[0]).isEqualTo("requestParam-22");
+		assertThat(dataBinder.getDisallowedFields()[0]).isEqualToIgnoringCase("requestParam-22");
 	}
 
 
